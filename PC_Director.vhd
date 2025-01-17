@@ -36,18 +36,32 @@ architecture juve3dstudio of RISCV is
     constant  M_SPIN         :std_logic_vector(2 downto 0)  := "101";
     constant  M_P0IN         :std_logic_vector(2 downto 0)  := "110";
     constant  M_INA          :std_logic_vector(2 downto 0)  := "111";
+    -- Virtual Rom -- 
+    signal  ROMIN: std_logic_vector (7 downto 0) :="00000000";
+    type MEMORY is array (0 to 15) of std_logic_vector(7 downto 0);
+    constant VROMIN : MEMORY := (
+        x"42", x"50", x"45", x"50", -- Data values for addresses 0 to 3
+        x"45", x"50", x"45", x"50", -- Data values for addresses 4 to 7
+        x"45", x"50", x"45", x"50", -- Data values for addresses 8 to 11
+        x"45", x"50", x"45", x"50"  -- Data values for addresses 12 to 15
+    );
+    signal VRAMIN : MEMORY := (others => x"FF");
+    signal S_ADDRESSRAM : unsigned(7 downto 0);
+
+
     -- Main Clock --
     signal CLKS : std_logic;
     signal RESET : std_logic:= '1';
+
     -- Program Counter --
-    signal PC_S,PC_A : unsigned (7 downto 0) := "00000000";
+    signal S_PCIN,PC_A : unsigned (7 downto 0) := "00000000";
     
     
     -- BUSES DE SLECTOR DE DATOS Y CSC --
     signal P1, SELR : std_logic_vector(7 downto 0);
     signal XIN, DATA : unsigned (7 downto 0) := (others => '0'); 
     signal SPIN: unsigned (7 downto 0) := x"FF";
-    signal ROMIN: std_logic_vector (7 downto 0);----------------------rominsingaltest
+
     -- MUX RAM --
     signal SELL : std_logic_vector (1 downto 0) := (others => '0');
     signal RW : std_logic;
@@ -64,7 +78,7 @@ architecture juve3dstudio of RISCV is
     
 
     -- Instruction Decoder  --
-    signal S_WRAM, XD, XU, SPD, SPU, EN_PORT, EN_AC, PCL: std_logic;
+    signal S_WRAM, EN_PORT, EN_AC, PCL: std_logic;
     signal IBI  : std_logic_vector(1 downto 0) := (others => '0');
     signal SCL,IBO  : std_logic_vector (1 downto 0) := (others => '0');
     signal SCR, SCD : std_logic_vector (2 downto 0) := (others => '0');
@@ -72,62 +86,62 @@ architecture juve3dstudio of RISCV is
     signal SPUD, XUD : std_logic_vector (1 downto 0) ;
     
     -- 1 Second Counter --
-    signal c, cplus : unsigned(23 downto 0) := (others => '0'); -- 25 Bits 
+    signal c, cplus : unsigned(26 downto 0) := (others => '0'); -- 25 Bits 
     constant tim : integer := 33554431;
 
 begin
     --Debugging --
-RESET<=RESETV;
+    RESET<=RESETV;
     ----- 1 Second Counter ----- 
     -- Memoria --
-    --c <= cplus when clk'event and clk='1';
+    c <= cplus when clk'event and clk='1';
     -- Logica de estado Siguiente --
-    --cplus <= c + 1 when (c < "111111111111111111111111") else (others => '0');
-                              
-    CLKS <= not clk;--cplus(23);
+    cplus <= c + 1 when (c < "111111111111111111111111111") else (others => '0');
+    
+    CLKS <= CLK; --cplus(26);
 
-    P_DEBUG <= not std_logic_vector(AC(7 downto 0));
-            --not std_logic_vector(DATA);
+    P_DEBUG <= not ("00000" &EN_AC & EN_PORT & PCL); 
             --not std_logic_vector(ALU);
-            --not ("00000" &EN_AC & EN_PORT & PCL);
+            
             --not std_logic_vector(P1OUT);
-            --not std_logic_vector(PC_A);
+    
+    
+    -- Internal Memory --
+    ROMIN <= VROMIN(to_integer(S_PCIN));
+    -- MUX RAM --
+    with SELL select
+    S_ADDRESSRAM <= 
+        unsigned(SELR) when "00",
+        unsigned(SELR) when "01",
+        XIN   when "10",
+        SPIN  when "11",
+        x"00" when others;
 
-with PCIN select--ROM INTERNA
-ROMIN<=x"57" when x"00",
-       x"07" when x"01",
-       x"45" when x"02",
-       x"45" when x"03",
-       x"45" when x"04",
-       x"45" when x"05",
-       x"45" when x"06",
-       x"45" when x"07",
-       x"46" when x"08",
-       x"46" when x"09",
-       x"46" when x"0A",
-       x"46" when x"0B",
-       x"46" when x"0C",
-       x"46" when x"0D",
-       x"46" when x"0E",
-       x"44" when x"0F",
-       x"FF" when others;
+    ADDRESSRAM <= std_logic_vector(S_ADDRESSRAM);
+    -- RAM --
+    --WRAM<=S_WRAM; 
+    --RAMIN <= "ZZZZZZZZ" when S_WRAM = '0' else std_logic_vector(DATA);
+    --RW <= S_WRAM and (not CLKS);
+    RAMIN <= VRAMIN(to_integer(S_ADDRESSRAM));
+    VRAMIN(to_integer(S_ADDRESSRAM)) <= std_logic_vector(DATA) when S_WRAM = '1' and rising_edge(clk);
 
 
-    P1OUT <= P1 when CLKS'event and CLKS = '1' ;
+    P1OUT <= P1;--; when CLKS'event and CLKS = '1' ;
     P1 <= std_logic_vector(DATA) when RESET = '1' and EN_PORT = '1' else "ZZZZZZZZ"; --CSC(2) = EN_PORT
+    ------------------------------ 1SEQUENCER -----------------------------
     -- Program Counter -- 
+	PCIN <= std_logic_vector(S_PCIN);
+    S_PCIN  <= (PC_A) when clk'event and clk = '0';
 
-    PCIN  <= std_logic_vector(PC_A);
+    PC_A <=
+        x"0F" when PC_A >= x"0F" else
+        (others => '0') when RESET = '0' else
+        DATA + 2 when PCL = '1' else
+        PC_A + 1 when rising_edge(clk) and PCL = '0' else
+        PC_A;
 
-    PC_A <= PC_S when  CLKS'event and CLKS = '1'; 
-    PC_S <= PC_A + 1 when PC_A<x"0F" and RESET ='1' else x"00";
-
-/*
-    PC_A <= 
-            PC_A + 1     when PCL = '0' and RESET = '1' and CLKS'event and CLKS = '1'   else
-            DATA + 2   when PCL = '1' and RESET = '1' and CLKS'event and CLKS = '1'   else 
-            PC_A;
-  */  -- Stack Pointer --
+    ------------------------------ 2Registers ------------------------------
+    -- Stack Pointer --
     SPIN <=    
         SPIN         when CLKS'event and CLKS = '1'  and SPUD = "00" else
         SPIN + 1     when CLKS'event and CLKS = '1'  and SPUD = "10" else
@@ -141,26 +155,13 @@ ROMIN<=x"57" when x"00",
         XIN - 1     when CLKS'event and CLKS = '1'  and XUD = "01" else
         DATA        when CLKS'event and CLKS = '1'  and XUD = "11";
 
-    -- MUX RAM --
-    with SELL select
-    ADDRESSRAM <= 
-        std_logic_vector(SELR) when "00",
-        std_logic_vector(SELR) when "01",
-        std_logic_vector(XIN)   when "10",
-        std_logic_vector(SPIN)  when "11",
-        x"00" when others;
-
    
-    -- RAM --
-    WRAM<=S_WRAM; 
-    RAMIN <= "ZZZZZZZZ" when S_WRAM = '0' else std_logic_vector(DATA);
-    RW <= S_WRAM and (not CLKS);
-
     -- Flag Register --
     FLAGOUT <= FLAGIN when CLKS'event and CLKS = '1' ;
     FLAGIN <= "0000" when RESET = '1' else 
               ZERO & CARRY & NEG & OVF;
-    
+    ---------------------------- 3Arithmetic Logic Unit ----------------------------
+  
     -- ALU --
     AC <= signed('0'&std_logic_vector(DATA)) when CLKS'event and CLKS = '1'  and RESET = '1' and EN_AC = '1' else
           "000000000" when CLKS'event and CLKS = '1';
@@ -171,31 +172,32 @@ ROMIN<=x"57" when x"00",
     CARRY<='1' when ROMIN = x"47" else '0' when ROMIN = x"48" else INA(8);
     NEG  <='1' when ROMIN = x"49" else '0' when ROMIN = x"4C" else INA(7);
     OVF  <='1' when ROMIN = x"4D" else '0' when ROMIN = x"4E" else CARRY xor NEG;
-
     with ROMIN select
-    INA<= 
-        AC + REG  + FLAGOUT(2) when "00000000" to "00000111",    
-        AC - REG  - FLAGOUT(2) when "00001000" to "00001111",
-        not(AC) + 1    when "01000000",
-        not AC         when "01000001",
-        AC+1           when "01000010",
-        AC-1           when "01000011",
-        AC AND "000000000" when "01000100",
-        AC              when "00010000",
-        AC and REG         when "00011000",
-        AC or REG          when "00100000",
-        AC xor REG         when "00101000",
-        AC + AC + FLAGOUT(2) when "01000101",
-        AC(0)& FLAGOUT(2) &AC(7 downto 1) when "01000110",
-        "000000000"     when others;
-    
+    INA <= 
+        AC + REG + FLAGOUT(2)         when "00000000" | "00000001" | "00000010" | "00000011" |
+                                        "00000100" | "00000101" | "00000110" | "00000111",
+        AC - REG - FLAGOUT(2)         when "00001000" | "00001001" | "00001010" | "00001011" |
+                                        "00001100" | "00001101" | "00001110" | "00001111",
+        not(AC) + 1                   when "01000000",
+        not AC                        when "01000001",
+        AC + 1                        when "01000010",
+        AC - 1                        when "01000011",
+        AC AND "000000000"            when "01000100",
+        AC and REG                    when "00011000",
+        AC or REG                     when "00100000",
+        AC xor REG                    when "00101000",
+        AC + AC + FLAGOUT(2)          when "01000101",
+        AC(0) & FLAGOUT(2) & AC(7 downto 1) when "01000110",
+        AC                   when others;
+
         
 
     ALU <= CPC(7 downto 0) when ROMIN = x"10" else INA(7 downto 0);
     CPC <= AC - REG  - FLAGOUT(2);
 
+    ---------------------------- 4Instruction Decoder ----------------------------
 
---MUX DATOS
+    -- MUX DATOS --
     with SELD select
     DATA     <=
               unsigned(ALU)   when M_ALU,
@@ -209,11 +211,10 @@ ROMIN<=x"57" when x"00",
               x"00" when others;
 
     -- Decoder --
-
     PCL <= '1'  when IBI="01" or (ROMIN=x"5D" and IBI="00" and FLAGIN(3)='1') or (ROMIN=x"5E" and IBI="00" and FLAGIN(2)='1') or (ROMIN=x"5F" and IBI="00" and FLAGIN(1)='1') or (ROMIN=x"60" and IBI="00" and FLAGIN(0)='1') or (ROMIN=x"5A")
                 or (IBI="10" and ROMIN=x"5B") or (IBI="00" and ROMIN=x"5C") else '0';
 
-    EN_AC <='1' when ((IBI="00" and (ROMIN<x"10" or (ROMIN>x"17" and ROMIN<x"38") or (ROMIN>x"3F" and ROMIN<x"47") or ROMIN=x"51" or ROMIN=x"53")) or IBI="10")  
+    EN_AC <='1' when ((IBI="00" and (ROMIN<x"10" or (ROMIN>x"17" and ROMIN<x"38") or (ROMIN>x"3F" and ROMIN<x"47") or ROMIN=x"50" or ROMIN=x"51" or ROMIN=x"53")) or IBI="10")  
             else '0';
 
     EN_PORT <= '1' when ROMIN = x"50"--(IBI="00" and ROMIN=x"40") or (IBI="00" and ROMIN=x"61") or (IBI="10" and ROMIN=x"5B") or ()
@@ -239,7 +240,7 @@ ROMIN<=x"57" when x"00",
         "00";            
 
     SELD <= 
-        M_INA when IBI="00" and ((ROMIN>x"37" and ROMIN<x"40") or ROMIN=x"40" or ROMIN=x"42" or ROMIN=x"44" or ROMIN=x"46") else
+        M_INA when IBI="00" and ((ROMIN>x"37" and ROMIN<x"40") or ROMIN=x"40" or ROMIN=x"42" or ROMIN=x"44" or ROMIN=x"46"  or ROMIN = x"50") else
         M_P0IN when IBI="00" and ROMIN=x"4F" else
         M_SPIN when IBI="00" and ROMIN=x"5C" else
         M_XIN when IBI="00" and ROMIN=x"51" else
