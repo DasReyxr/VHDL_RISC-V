@@ -12,9 +12,9 @@ entity RISCV is
 	port
 	(
         ---- Main Clock ---
-        RESET, CLK : in std_logic;
+        RESETV, CLK : in std_logic;
         -- Rom & Ram --
-        ROMIN: in std_logic_vector (7 downto 0);
+        --ROMIN: in std_logic_vector (7 downto 0);
         RAMIN : inout std_logic_vector (7 downto 0);
         -- Address --
         PCIN, ADDRESSRAM: out std_logic_vector (7 downto 0);
@@ -38,6 +38,7 @@ architecture juve3dstudio of RISCV is
     constant  M_INA          :std_logic_vector(2 downto 0)  := "111";
     -- Main Clock --
     signal CLKS : std_logic;
+    signal RESET : std_logic:= '1';
     -- Program Counter --
     signal PC_S,PC_A : unsigned (7 downto 0) := "00000000";
     
@@ -46,7 +47,7 @@ architecture juve3dstudio of RISCV is
     signal P1, SELR : std_logic_vector(7 downto 0);
     signal XIN, DATA : unsigned (7 downto 0) := (others => '0'); 
     signal SPIN: unsigned (7 downto 0) := x"FF";
-
+    signal ROMIN: std_logic_vector (7 downto 0);----------------------rominsingaltest
     -- MUX RAM --
     signal SELL : std_logic_vector (1 downto 0) := (others => '0');
     signal RW : std_logic;
@@ -71,30 +72,45 @@ architecture juve3dstudio of RISCV is
     signal SPUD, XUD : std_logic_vector (1 downto 0) ;
     
     -- 1 Second Counter --
-    signal c, cplus : unsigned(26 downto 0) := (others => '0'); -- 25 Bits 
+    signal c, cplus : unsigned(23 downto 0) := (others => '0'); -- 25 Bits 
     constant tim : integer := 33554431;
 
 begin
     --Debugging --
-
+RESET<=RESETV;
     ----- 1 Second Counter ----- 
     -- Memoria --
-    c <= cplus when clk'event and clk='1';
+    --c <= cplus when clk'event and clk='1';
     -- Logica de estado Siguiente --
-    cplus <= c + 1 when (c < "111111111111111111111111111") else (others => '0');
-    
-    CLKS <= cplus(26);
+    --cplus <= c + 1 when (c < "111111111111111111111111") else (others => '0');
+                              
+    CLKS <= not clk;--cplus(23);
 
-    P_DEBUG <= 
-            not std_logic_vector(ALU);
-             --   not ("00000" &EN_AC & EN_PORT & PCL);
+    P_DEBUG <= not std_logic_vector(AC(7 downto 0));
+            --not std_logic_vector(DATA);
+            --not std_logic_vector(ALU);
+            --not ("00000" &EN_AC & EN_PORT & PCL);
             --not std_logic_vector(P1OUT);
-    
+            --not std_logic_vector(PC_A);
 
-
-
-
- 
+with PCIN select--ROM INTERNA
+ROMIN<=x"57" when x"00",
+       x"07" when x"01",
+       x"45" when x"02",
+       x"45" when x"03",
+       x"45" when x"04",
+       x"45" when x"05",
+       x"45" when x"06",
+       x"45" when x"07",
+       x"46" when x"08",
+       x"46" when x"09",
+       x"46" when x"0A",
+       x"46" when x"0B",
+       x"46" when x"0C",
+       x"46" when x"0D",
+       x"46" when x"0E",
+       x"44" when x"0F",
+       x"FF" when others;
 
 
     P1OUT <= P1 when CLKS'event and CLKS = '1' ;
@@ -104,7 +120,7 @@ begin
     PCIN  <= std_logic_vector(PC_A);
 
     PC_A <= PC_S when  CLKS'event and CLKS = '1'; 
-    PC_S <= PC_A + 1 when PC_A<x"FF" and RESET ='1' else x"00";
+    PC_S <= PC_A + 1 when PC_A<x"0F" and RESET ='1' else x"00";
 
 /*
     PC_A <= 
@@ -146,7 +162,7 @@ begin
               ZERO & CARRY & NEG & OVF;
     
     -- ALU --
-    AC <= signed('0'&std_logic_vector(DATA)) when CLKS'event and CLKS = '1'  and RESET = '1' and EN_AC = '0' else
+    AC <= signed('0'&std_logic_vector(DATA)) when CLKS'event and CLKS = '1'  and RESET = '1' and EN_AC = '1' else
           "000000000" when CLKS'event and CLKS = '1';
         
     REG <=signed('0'&RAMIN);
@@ -194,10 +210,10 @@ begin
 
     -- Decoder --
 
-    PCL <= '1'  when IBI="01" or (ROMIN=x"5D" and IBI="00" and FLAGIN(3)='1') or (ROMIN=x"5E" and IBI="00" and FLAGIN(2)='1') or (ROMIN=x"5F" and IBI="00" and FLAGIN(1)='1') or (ROMIN=x"60" and IBI="00" and FLAGIN(0)='1') or (ROMIN=x"5A" and IBI="10")
+    PCL <= '1'  when IBI="01" or (ROMIN=x"5D" and IBI="00" and FLAGIN(3)='1') or (ROMIN=x"5E" and IBI="00" and FLAGIN(2)='1') or (ROMIN=x"5F" and IBI="00" and FLAGIN(1)='1') or (ROMIN=x"60" and IBI="00" and FLAGIN(0)='1') or (ROMIN=x"5A")
                 or (IBI="10" and ROMIN=x"5B") or (IBI="00" and ROMIN=x"5C") else '0';
 
-    EN_AC <= '1' when (IBI="00" and (ROMIN<x"10" or (ROMIN>x"17" and ROMIN<x"38") or (ROMIN>x"3F" and ROMIN<x"47") or ROMIN=x"51" or ROMIN=x"53")) or IBI="10" 
+    EN_AC <='1' when ((IBI="00" and (ROMIN<x"10" or (ROMIN>x"17" and ROMIN<x"38") or (ROMIN>x"3F" and ROMIN<x"47") or ROMIN=x"51" or ROMIN=x"53")) or IBI="10")  
             else '0';
 
     EN_PORT <= '1' when ROMIN = x"50"--(IBI="00" and ROMIN=x"40") or (IBI="00" and ROMIN=x"61") or (IBI="10" and ROMIN=x"5B") or ()
@@ -233,8 +249,8 @@ begin
         M_ALU;
 
     IBO <= 
-        "01" when IBI="00" and ((ROMIN=x"5D" and FLAGIN(3)='1') or (ROMIN=x"5E" and FLAGIN(2)='1') or (ROMIN=x"5F" and FLAGIN(1)='1') or (ROMIN=x"60" and FLAGIN(0)='1')) else
-        "10" when IBI="00" and (ROMIN=x"57" or ROMIN=x"5A" or ROMIN=x"5B") else
+        "01" when IBI="00" and ((ROMIN=x"5D" and FLAGIN(3)='1') or (ROMIN=x"5E" and FLAGIN(2)='1') or (ROMIN=x"5F" and FLAGIN(1)='1') or (ROMIN=x"60" and FLAGIN(0)='1') or ROMIN=x"5A" or ROMIN=x"5B" or ROMIN=x"5B") else
+        "10" when (ROMIN=x"57") else
         "00";
 
     -- Decoder Machine States --
