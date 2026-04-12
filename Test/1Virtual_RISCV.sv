@@ -96,25 +96,45 @@ end
    PCL Modificar Program Counter
 
     
-   SCL Selector Ram MRAM
-   SCR Selector Registro M
+   SELM Selector Ram MRAM
+   SELR Selector Registro M
    SCD Selector de dato
    IBI IBO Maquina de estados del decodificador 
               F_ZERO & F_CARRY & F_NEG & F_OVF;
 
 */
-always_comb begin 
-    if(ROMIN = INST_JMP || IBI[1] =1'b1 || (IBI = 2'b00 && ((ROMIN = INST_BREQ && FLAGIN[0])|| 
-                                                            (ROMIN = INST_BRCS && FLAGIN[1])||
-                                                            (ROMIN = INST_BRMI && FLAGIN[2])||
-                                                            (ROMIN = INST_BRVS && FLAGIN[3]))) )
-    PCL = 1'b1;
-    else PCL = 1'b0;
+always_comb begin
+    PCL = (ROMIN == INST_JMP) ||    ((ROMIN == INST_BREQ) && FLAGIN[0]) ||
+                                    ((ROMIN == INST_BRCS) && FLAGIN[1]) ||
+                                    ((ROMIN == INST_BRMI) && FLAGIN[2]) ||
+                                    ((ROMIN == INST_BRVS) && FLAGIN[3]);
 
-    if(ROMIN == INST_MOV_P1) EN_PORT = 1b'1; else EN_PORT = 1b'0;
+    EN_PORT = (ROMIN == INST_MOV_P1);
 
+    EN_AC = ((ROMIN >= INST_ADC_L) && (ROMIN <= INST_ROR)) ||
+            ((ROMIN >= INST_MOV_L) && (ROMIN <= INST_MOV_SP));
     
+    if (ROMIN < INST_ROL)
+        SELR = {5'h0, ROMIN[2:0]};
+    else
+        SELR = 8'h00;
+    
+    if(ROMIN == INST_MOV_SP) SELL = 2'b10;
+    else if (ROMIN == INST_MOV_A  || ROMIN = INST_MOV_M) SELL = 2'b11;
+    else if ((ROMIN >= INST_ADC_L) && (ROMIN <= INST_SBC_H)) ||
+            ((ROMIN >= INST_AND_L) && (ROMIN <= INST_EOR_H)) ||
+            ((ROMIN >= INST_MOV_L) && (ROMIN <= INST_MOV_H))
+            SELL = 2'b01;
+    else 2'b00;
+
+    if(ROMIN >= INST_ADC_L || ROMIN <= INST_ROR  ) ||
+      (ROMIN == INST_INC   || ROMIN == INST_DEC  ) ||
+      (ROMIN == INST_INC_X || ROMIN == INST_DEC_X) ||
+      (ROMIN >= INST_JMP   || ROMIN <= INST_BRVS)  && (ROMIN != INST_RET)  SELD = M_ALU;
+    
+
 end
+
 always_ff @(posedge CLK) begin 
    XIN <= XIN_COMB;
 end
